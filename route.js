@@ -1,49 +1,64 @@
 import { NextResponse } from 'next/server';
-import { validCoupons } from '@/data/foodData';
+import { foodItems } from '@/data/foodData';
 
-export async function POST(request) {
+export async function GET(request) {
   try {
-    const { code, subtotal } = await request.json();
+    const { searchParams } = new URL(request.url);
+    const category = searchParams.get('category');
+    const search = searchParams.get('search');
+    const diet = searchParams.get('diet'); // 'veg', 'non-veg', 'all'
+    const sort = searchParams.get('sort'); // 'popular', 'price-low', 'price-high', 'rating'
 
-    if (!code) {
-      return NextResponse.json({ success: false, message: 'Please enter a coupon code' }, { status: 400 });
+    let filtered = [...foodItems];
+
+    if (category && category !== 'all') {
+      filtered = filtered.filter(item => item.category.toLowerCase() === category.toLowerCase());
     }
 
-    const cleanCode = code.trim().toUpperCase();
-    const coupon = validCoupons[cleanCode];
-
-    if (!coupon) {
-      return NextResponse.json(
-        { success: false, message: `Invalid coupon code "${cleanCode}". Try FEAST20 or TASTY50.` },
-        { status: 400 }
-      );
-    }
-
-    if (subtotal < coupon.minOrder) {
-      return NextResponse.json(
-        { success: false, message: `Add items worth ₹${coupon.minOrder - subtotal} more to use ${cleanCode}!` },
-        { status: 400 }
-      );
-    }
-
-    let discount = 0;
-    if (coupon.discountPercent) {
-      discount = Math.round((subtotal * coupon.discountPercent) / 100);
-      if (coupon.maxDiscount && discount > coupon.maxDiscount) {
-        discount = coupon.maxDiscount;
+    if (diet && diet !== 'all') {
+      if (diet === 'veg') {
+        filtered = filtered.filter(item => item.isVeg === true);
+      } else if (diet === 'non-veg') {
+        filtered = filtered.filter(item => item.isVeg === false);
       }
-    } else if (coupon.discountAmount) {
-      discount = coupon.discountAmount;
+    }
+
+    if (search) {
+      const q = search.toLowerCase().trim();
+      filtered = filtered.filter(item =>
+        item.name.toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q)
+      );
+    }
+
+    if (sort) {
+      switch (sort) {
+        case 'price-low':
+          filtered.sort((a, b) => a.price - b.price);
+          break;
+        case 'price-high':
+          filtered.sort((a, b) => b.price - a.price);
+          break;
+        case 'rating':
+          filtered.sort((a, b) => b.rating - a.rating);
+          break;
+        case 'popular':
+        default:
+          filtered.sort((a, b) => (b.isPopular ? 1 : 0) - (a.isPopular ? 1 : 0));
+          break;
+      }
     }
 
     return NextResponse.json({
       success: true,
-      code: cleanCode,
-      discount,
-      freeDelivery: !!coupon.freeDelivery,
-      message: `Coupon ${cleanCode} applied successfully! You saved ₹${discount}`,
+      count: filtered.length,
+      data: filtered,
     });
   } catch (error) {
-    return NextResponse.json({ success: false, message: 'Coupon validation failed' }, { status: 500 });
+    return NextResponse.json(
+      { success: false, message: 'Failed to retrieve food items', error: error.message },
+      { status: 500 }
+    );
   }
 }
